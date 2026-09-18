@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Server Keep-Alive | Safal Library</title>
+    
+    <!-- Tailwind CSS & FontAwesome -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800;900&display=swap');
+        body { 
+            font-family: 'Plus Jakarta Sans', sans-serif; 
+            background-color: #0f172a; 
+            color: white;
+            min-height: 100vh;
+        }
+        
+        /* Custom Toggle Switch CSS */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #3b82f6;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #3b82f6;
+        }
+        
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        #logContainer::-webkit-scrollbar {
+            width: 6px;
+        }
+        #logContainer::-webkit-scrollbar-thumb {
+            background-color: #475569;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+
+    <div class="w-full max-w-lg glass-panel rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+        
+        <!-- Status Indicator Blob -->
+        <div id="statusGlow" class="absolute -top-20 -right-20 w-40 h-40 bg-red-500 rounded-full blur-[80px] opacity-30 transition-colors duration-1000"></div>
+
+        <div class="flex justify-between items-center mb-8 relative z-10">
+            <div>
+                <h1 class="text-2xl font-black tracking-tight flex items-center gap-2">
+                    <i class="fa-solid fa-server text-blue-500"></i> Server Keep-Alive
+                </h1>
+                <p class="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Safal Library Backend Utility</p>
+            </div>
+            
+            <!-- ON / OFF Toggle Switch -->
+            <div class="relative inline-block w-14 mr-2 align-middle select-none transition duration-200 ease-in">
+                <input type="checkbox" name="toggle" id="activeToggle" onchange="togglePinger()" class="toggle-checkbox absolute block w-7 h-7 rounded-full bg-white border-4 border-slate-700 appearance-none cursor-pointer transition-all duration-300 z-10 top-0 left-0"/>
+                <label for="activeToggle" class="toggle-label block overflow-hidden h-7 rounded-full bg-slate-700 cursor-pointer transition-colors duration-300"></label>
+            </div>
+        </div>
+
+        <div class="space-y-6 relative z-10">
+            <!-- Target URL Input -->
+            <div>
+                <label class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Target API URL</label>
+                <div class="relative">
+                    <i class="fa-solid fa-link absolute left-4 top-3.5 text-slate-500"></i>
+                    <input type="text" id="targetUrl" value="https://test3-qi2z.onrender.com" class="w-full bg-slate-800/50 border border-slate-600 rounded-xl py-3 pl-11 pr-4 text-sm font-medium outline-none focus:border-blue-500 transition text-slate-200" placeholder="https://your-api.com">
+                </div>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-slate-800/50 border border-slate-700 p-4 rounded-2xl text-center">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Status</p>
+                    <p id="statusText" class="font-black text-red-400">INACTIVE</p>
+                </div>
+                <div class="bg-slate-800/50 border border-slate-700 p-4 rounded-2xl text-center">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Next Ping In</p>
+                    <p id="countdownText" class="font-black text-slate-200 font-mono">--:--</p>
+                </div>
+            </div>
+
+            <!-- Activity Log -->
+            <div>
+                <div class="flex justify-between items-end mb-2">
+                    <label class="text-xs font-bold text-slate-400 uppercase tracking-wider">Activity Log</label>
+                    <button onclick="clearLog()" class="text-[10px] text-slate-500 hover:text-slate-300 uppercase font-bold transition"><i class="fa-solid fa-trash-can mr-1"></i>Clear</button>
+                </div>
+                <div id="logContainer" class="bg-slate-900 border border-slate-700 rounded-xl h-48 overflow-y-auto p-4 space-y-2 text-xs font-mono">
+                    <div class="text-slate-500 italic">System idle. Turn on the switch to start pinging.</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="mt-6 text-center relative z-10">
+            <p class="text-[10px] text-slate-500 font-bold leading-relaxed">
+                <i class="fa-solid fa-triangle-exclamation text-amber-500 mr-1"></i> 
+                Warning: You must leave this browser tab open for the pinger to work. If you close this page or your computer goes to sleep, the pings will stop.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        let pingIntervalId = null;
+        let countdownIntervalId = null;
+        let timeRemaining = 0;
+        
+        // Interval set to 4 minutes (240 seconds)
+        const PING_INTERVAL_SECONDS = 240; 
+
+        function togglePinger() {
+            const toggleBtn = document.getElementById('activeToggle');
+            const statusText = document.getElementById('statusText');
+            const statusGlow = document.getElementById('statusGlow');
+            
+            if (toggleBtn.checked) {
+                // START PINGING
+                statusText.innerText = "ACTIVE";
+                statusText.className = "font-black text-blue-400 animate-pulse";
+                statusGlow.classList.remove('bg-red-500');
+                statusGlow.classList.add('bg-blue-500');
+                
+                startPinger();
+                addLog("System activated. Monitoring started.", "system");
+            } else {
+                // STOP PINGING
+                statusText.innerText = "INACTIVE";
+                statusText.className = "font-black text-red-400";
+                statusGlow.classList.remove('bg-blue-500');
+                statusGlow.classList.add('bg-red-500');
+                
+                stopPinger();
+                addLog("System deactivated. Monitoring stopped.", "system");
+            }
+        }
+
+        function startPinger() {
+            timeRemaining = PING_INTERVAL_SECONDS;
+            pingServer(); // Ping immediately on start
+            
+            // Set intervals for repeating pings and the visual countdown
+            pingIntervalId = setInterval(pingServer, PING_INTERVAL_SECONDS * 1000);
+            countdownIntervalId = setInterval(updateCountdown, 1000);
+        }
+
+        function stopPinger() {
+            clearInterval(pingIntervalId);
+            clearInterval(countdownIntervalId);
+            pingIntervalId = null;
+            countdownIntervalId = null;
+            document.getElementById('countdownText').innerText = "--:--";
+        }
+
+        async function pingServer() {
+            const url = document.getElementById('targetUrl').value.trim();
+            if (!url) {
+                addLog("Error: No URL provided.", "error");
+                document.getElementById('activeToggle').click(); // Turn off switch
+                return;
+            }
+
+            // Reset countdown timer
+            timeRemaining = PING_INTERVAL_SECONDS;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            addLog(`Waking up server...`, "info");
+
+            try {
+                // We use mode: 'no-cors' so the browser doesn't block the request if your backend doesn't have CORS setup for this file. 
+                // It won't return data, but it WILL hit the server and keep it awake.
+                await fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' });
+                addLog(`[${timestamp}] Ping sent successfully.`, "success");
+            } catch (error) {
+                addLog(`[${timestamp}] Ping failed to send.`, "error");
+            }
+        }
+
+        function updateCountdown() {
+            timeRemaining--;
+            if (timeRemaining < 0) timeRemaining = 0;
+            
+            const minutes = Math.floor(timeRemaining / 60);
+            const seconds = timeRemaining % 60;
+            
+            const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            document.getElementById('countdownText').innerText = formattedTime;
+        }
+
+        function addLog(message, type) {
+            const logContainer = document.getElementById('logContainer');
+            const logElement = document.createElement('div');
+            
+            // Remove initial idle message if it exists
+            if (logContainer.innerHTML.includes("System idle")) {
+                logContainer.innerHTML = "";
+            }
+
+            let colorClass = "text-slate-300";
+            if (type === "success") colorClass = "text-green-400";
+            if (type === "error") colorClass = "text-red-400";
+            if (type === "system") colorClass = "text-amber-400 font-bold";
+            if (type === "info") colorClass = "text-blue-300";
+
+            logElement.className = `${colorClass} border-l-2 ${type === 'system' ? 'border-amber-400' : 'border-slate-600'} pl-2 mb-2`;
+            logElement.innerText = message;
+            
+            // Add new log to the TOP of the container
+            logContainer.prepend(logElement);
+            
+            // Keep only the last 20 logs to prevent memory bloat
+            while (logContainer.children.length > 20) {
+                logContainer.removeChild(logContainer.lastChild);
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('logContainer').innerHTML = `<div class="text-slate-500 italic">Log cleared.</div>`;
+        }
+    </script>
+</body>
+</html>
